@@ -1,10 +1,11 @@
-name: "CodeQL Analysis"
+name: "CodeQL SAST Analysis"
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
   schedule:
     - cron: '0 0 * * 1'
 
