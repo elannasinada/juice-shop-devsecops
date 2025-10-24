@@ -1,0 +1,96 @@
+name: "Container Security - Trivy Scan"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  trivy-scan:
+    name: Scan Docker Image with Trivy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Pull Juice Shop Docker image
+      run: docker pull bkimminich/juice-shop:latest
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'bkimminich/juice-shop:latest'
+        format: 'json'
+        output: 'trivy-report.json'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Generate Trivy HTML report
+      if: always()
+      run: |
+        echo "Creating Trivy HTML report..."
+
+        cat > trivy-report.html <<'HTMLEOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Trivy Container Security Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                .header { background-color: #326CE5; color: white; padding: 20px; border-radius: 5px; }
+                .summary { background-color: white; padding: 20px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #326CE5; color: white; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Trivy Container Security Scan Report</h1>
+                <p>Juice Shop DevSecOps Pipeline</p>
+                <p>Generated: $(date)</p>
+            </div>
+            <div class="summary">
+                <h2>Scan Summary</h2>
+                <p><strong>Image:</strong> bkimminich/juice-shop:latest</p>
+        HTMLEOF
+
+        # Extract vulnerability counts
+        if [ -f "trivy-report.json" ]; then
+          critical=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo "0")
+          high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-report.json 2>/dev/null || echo "0")
+          medium=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' trivy-report.json 2>/dev/null || echo "0")
+          low=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' trivy-report.json 2>/dev/null || echo "0")
+
+          echo "        <table>" >> trivy-report.html
+          echo "          <tr><th>Severity</th><th>Count</th></tr>" >> trivy-report.html
+          echo "          <tr><td>Critical</td><td>$critical</td></tr>" >> trivy-report.html
+          echo "          <tr><td>High</td><td>$high</td></tr>" >> trivy-report.html
+          echo "          <tr><td>Medium</td><td>$medium</td></tr>" >> trivy-report.html
+          echo "          <tr><td>Low</td><td>$low</td></tr>" >> trivy-report.html
+          echo "          <tr><td><strong>Total</strong></td><td><strong>$((critical + high + medium + low))</strong></td></tr>" >> trivy-report.html
+          echo "        </table>" >> trivy-report.html
+
+          echo "📊 Vulnerability Summary:"
+          echo "   🔴 Critical: $critical"
+          echo "   🟠 High: $high"
+          echo "   🟡 Medium: $medium"
+          echo "   🟢 Low: $low"
+        fi
+
+        echo "    </div>" >> trivy-report.html
+        echo "</body></html>" >> trivy-report.html
+
+        echo "✅ Trivy HTML report generated"
+
+    - name: Upload Trivy reports as artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: trivy-container-report
+        path: |
+          trivy-report.json
+          trivy-report.html
+        retention-days: 30

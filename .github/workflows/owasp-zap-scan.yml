@@ -1,0 +1,42 @@
+name: "DAST - OWASP ZAP Scan"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  dast-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1️⃣ Checkout repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2️⃣ Start Juice Shop using Docker (runs on port 3000)
+    - name: Run Juice Shop in Docker
+      run: |
+        docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
+        echo "Waiting 15 seconds for Juice Shop to start..."
+        sleep 15
+
+    # 3️⃣ Run OWASP ZAP Baseline Scan (uses correct image zaproxy/zap-stable ✅)
+    - name: Run OWASP ZAP Baseline Scan
+      run: |
+        docker pull zaproxy/zap-stable
+        docker run --user root \
+          --network="host" \
+          -v $(pwd):/zap/wrk/:rw \
+          zaproxy/zap-stable zap-baseline.py \
+          -t http://localhost:3000 \
+          -r zap-report.html|| true  # Prevent failing even if vulnerabilities are found
+
+    # 4️⃣ Upload ZAP report as an artifact
+    - name: Upload ZAP HTML report
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-dast-report
+        path: zap-report.html
