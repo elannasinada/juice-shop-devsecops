@@ -7,4 +7,8 @@ fileignoreconfig:
   checksum: ff0faf105595b150c5d14c622a6e85bbed2df42c6eae41f7a9ba51a016ed3137
 - filename: PIPELINE-CI-CD-COMPLET.yml
   checksum: a5d9c6b2f754850afed155e59364ec5cad5c0b8fe163bd0cd8f94da2ee03a3c3
+- filename: TALISMAN-OUTPUT-EXAMPLE.txt
+  checksum: a1f0d21f0d6f6da44b0cacbdc035c4efa0eefd5a6dcd3c09dad0423258566e58
+- filename: TALISMAN-SECURITY-REPORT.md
+  checksum: 5f0d7ba4f2b5418f6c768964177a80cd8155f1b2cfdeb9b79f0adba2c62bb5f2
 version: "1.0"

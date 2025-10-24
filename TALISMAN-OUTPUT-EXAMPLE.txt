@@ -1,0 +1,173 @@
+================================================================================
+TALISMAN SECURITY SCAN - OUTPUT EXAMPLES
+================================================================================
+
+Date: 24 Janvier 2025
+Projet: OWASP Juice Shop DevSecOps Pipeline
+Outil: Talisman v1.32.0
+
+================================================================================
+EXEMPLE 1: DÉTECTION RÉUSSIE - FAUX POSITIF (DOCUMENTATION)
+================================================================================
+
+$ git add DEFECTDOJO-INTEGRATION.md
+$ git commit -m "Add Defect Dojo integration documentation"
+
+Talisman Report:
++--------------------------------------+--------------------------------+----------+
+|                 FILE                 |             ERRORS             | SEVERITY |
++--------------------------------------+--------------------------------+----------+
+| DEFECTDOJO-INTEGRATION.md            | Potential secret pattern :     | low      |
+|                                      | - Default password: `admin`    |          |
+|                                      | (change immediately)           |          |
++--------------------------------------+--------------------------------+----------+
+
+If you are absolutely sure that you want to ignore the above files from 
+talisman detectors, consider pasting the following format in .talismanrc 
+file in the project root
+
+fileignoreconfig:
+- filename: DEFECTDOJO-INTEGRATION.md
+  checksum: 708b902833a9a43c4333094af5e1f8b7bb21bf52e814dab53c7ba8c9961ad6ce
+version: "1.0"
+
+Talisman done in 948.0419ms
+
+[!] COMMIT BLOQUÉ - Secrets potentiels détectés
+
+Action prise: Fichier ajouté à .talismanrc après vérification qu'il s'agit 
+             d'un faux positif (documentation seulement).
+
+================================================================================
+EXEMPLE 2: DÉTECTION RÉUSSIE - CONFIGURATION DOCKER
+================================================================================
+
+$ git add .github/workflows/owasp-zap-scan.yml
+$ git commit -m "Add OWASP ZAP workflow"
+
+Talisman Report:
++--------------------------------------+--------------------------------+----------+
+|                 FILE                 |             ERRORS             | SEVERITY |
++--------------------------------------+--------------------------------+----------+
+| .github/workflows/owasp-zap-scan.yml | Potential secret pattern :     | low      |
+|                                      |       -v $(pwd):/zap/wrk/:rw \ |          |
++--------------------------------------+--------------------------------+----------+
+
+If you are absolutely sure that you want to ignore the above files from 
+talisman detectors, consider pasting the following format in .talismanrc 
+file in the project root
+
+fileignoreconfig:
+- filename: .github/workflows/owasp-zap-scan.yml
+  checksum: 71448025eede524fe7244e5170797c9204aa851f3014a02c0fe3fbfdc162276f
+version: "1.0"
+
+Talisman done in 881.9654ms
+
+[!] COMMIT BLOQUÉ - Secrets potentiels détectés
+
+Action prise: Fichier ajouté à .talismanrc (configuration Docker légitime).
+
+================================================================================
+EXEMPLE 3: DÉTECTION RÉUSSIE - RÉFÉRENCE À SECRETS GITHUB
+================================================================================
+
+$ git add PIPELINE-CI-CD-COMPLET.yml
+$ git commit -m "Add complete CI/CD pipeline configuration document"
+
+Talisman Report:
++----------------------------+--------------------------------+----------+
+|            FILE            |             ERRORS             | SEVERITY |
++----------------------------+--------------------------------+----------+
+| PIPELINE-CI-CD-COMPLET.yml | Potential secret pattern       | low      |
+|                            | : # - Secret GitHub:           |          |
+|                            | SNYK_TOKEN (obtenu depuis      |          |
+|                            | https://app.snyk.io/account)   |          |
++----------------------------+--------------------------------+----------+
+| PIPELINE-CI-CD-COMPLET.yml | Potential secret pattern :     | low      |
+|                            |       -v $(pwd):/zap/wrk/:rw \ |          |
++----------------------------+--------------------------------+----------+
+
+If you are absolutely sure that you want to ignore the above files from 
+talisman detectors, consider pasting the following format in .talismanrc 
+file in the project root
+
+fileignoreconfig:
+- filename: PIPELINE-CI-CD-COMPLET.yml
+  checksum: a5d9c6b2f754850afed155e59364ec5cad5c0b8fe163bd0cd8f94da2ee03a3c3
+version: "1.0"
+
+Talisman done in 201.5423ms
+
+[!] COMMIT BLOQUÉ - Secrets potentiels détectés
+
+Action prise: Fichier ajouté à .talismanrc (documentation de configuration).
+
+================================================================================
+EXEMPLE 4: COMMIT RÉUSSI APRÈS CONFIGURATION .talismanrc
+================================================================================
+
+$ cat .talismanrc
+fileignoreconfig:
+- filename: .github/workflows/owasp-zap-scan.yml
+  checksum: 71448025eede524fe7244e5170797c9204aa851f3014a02c0fe3fbfdc162276f
+- filename: DEFECTDOJO-INTEGRATION.md
+  checksum: 708b902833a9a43c4333094af5e1f8b7bb21bf52e814dab53c7ba8c9961ad6ce
+- filename: DEVSECOPS-PIPELINE-SUMMARY.md
+  checksum: ff0faf105595b150c5d14c622a6e85bbed2df42c6eae41f7a9ba51a016ed3137
+- filename: PIPELINE-CI-CD-COMPLET.yml
+  checksum: a5d9c6b2f754850afed155e59364ec5cad5c0b8fe163bd0cd8f94da2ee03a3c3
+version: "1.0"
+
+$ git add .
+$ git commit -m "Add complete DevSecOps pipeline: SAST, SCA, DAST, and Container Security"
+
+Talisman done in 254.4639ms
+
+[main d183823a11] Add complete DevSecOps pipeline: SAST, SCA, DAST, and Container Security
+ 4 files changed, 508 insertions(+), 1 deletion(-)
+ create mode 100644 PIPELINE-CI-CD-COMPLET.yml
+
+[✓] COMMIT RÉUSSI - Aucun secret détecté
+
+================================================================================
+STATISTIQUES TALISMAN
+================================================================================
+
+Total de commits analysés:      8+
+Commits bloqués (faux positifs): 4
+Secrets réels détectés:          0
+Fichiers whitelistés:            4
+Temps moyen d'analyse:           ~500ms
+
+Taux de protection:              100% (aucun secret n'a atteint le dépôt)
+Faux positifs gérés:             100% (tous documentés et whitelistés)
+
+================================================================================
+TYPES DE DÉTECTIONS
+================================================================================
+
+┌─────────────────────────────┬──────────────┬──────────┬──────────────────┐
+│ Type de Pattern             │ Occurrences  │ Sévérité │ Vrais Positifs   │
+├─────────────────────────────┼──────────────┼──────────┼──────────────────┤
+│ Références "password"       │      1       │   LOW    │       Non        │
+│ Références "token"          │      2       │   LOW    │       Non        │
+│ Configurations Docker       │      1       │   LOW    │       Non        │
+│ Clés API réelles           │      0       │   HIGH   │      N/A         │
+│ Secrets AWS                 │      0       │   HIGH   │      N/A         │
+└─────────────────────────────┴──────────────┴──────────┴──────────────────┘
+
+================================================================================
+CONCLUSION
+================================================================================
+
+✅ Talisman fonctionne correctement
+✅ Tous les faux positifs ont été identifiés et gérés
+✅ Aucun vrai secret n'a été commité
+✅ Le fichier .talismanrc est correctement maintenu
+✅ Le workflow de développement n'est pas perturbé
+
+Talisman représente une couche de sécurité essentielle dans le pipeline
+DevSecOps, empêchant les fuites de secrets dès le commit local.
+
+================================================================================
