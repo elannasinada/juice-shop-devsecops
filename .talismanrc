@@ -5,4 +5,6 @@ fileignoreconfig:
   checksum: 708b902833a9a43c4333094af5e1f8b7bb21bf52e814dab53c7ba8c9961ad6ce
 - filename: DEVSECOPS-PIPELINE-SUMMARY.md
   checksum: ff0faf105595b150c5d14c622a6e85bbed2df42c6eae41f7a9ba51a016ed3137
+- filename: PIPELINE-CI-CD-COMPLET.yml
+  checksum: a5d9c6b2f754850afed155e59364ec5cad5c0b8fe163bd0cd8f94da2ee03a3c3
 version: "1.0"

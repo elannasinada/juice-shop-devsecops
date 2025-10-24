@@ -143,7 +143,7 @@ This document summarizes the complete DevSecOps CI/CD pipeline implementation fo
 **Report Location**: `.github/workflows/snyk-scan.yml:33-43`
 
 **Required Secret**:
-- `SYNK_TOKEN` - Snyk API authentication token
+- `SNYK_TOKEN` - Snyk API authentication token
 
 ---
 

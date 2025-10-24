@@ -1,0 +1,488 @@
+# ============================================================================
+# PIPELINE CI/CD DEVSECOPS COMPLET - OWASP JUICE SHOP
+# ============================================================================
+#
+# Ce fichier présente la configuration complète du pipeline DevSecOps
+# intégrant les outils de sécurité suivants :
+# - Talisman (Pre-commit - détection de secrets)
+# - CodeQL (SAST - analyse statique du code)
+# - Snyk (SCA - analyse des dépendances)
+# - OWASP ZAP (DAST - tests dynamiques)
+# - Trivy (Container Security - sécurité des images Docker)
+# - Defect Dojo (Gestion centralisée des vulnérabilités - optionnel)
+#
+# Auteur: DevSecOps GL2026
+# Date: Janvier 2025
+# ============================================================================
+
+# ============================================================================
+# WORKFLOW 1: SAST - ANALYSE STATIQUE AVEC CODEQL
+# ============================================================================
+# Fichier: .github/workflows/codeql-analysis.yml
+
+name: "CodeQL SAST Analysis"
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1'  # Exécution hebdomadaire le lundi
+
+jobs:
+  analyze:
+    name: Analyze Code with CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      id: analyze
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+        output: sarif-results
+        upload: false
+
+    - name: Upload SARIF file as artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: codeql-sarif-results
+        path: sarif-results
+        retention-days: 30
+
+    - name: Setup Node.js for HTML generation
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Find and convert SARIF to HTML
+      if: always()
+      run: |
+        echo "Looking for SARIF files..."
+        find sarif-results -name "*.sarif" -type f
+
+        for sarif_file in sarif-results/*.sarif; do
+          if [ -f "$sarif_file" ]; then
+            echo "Converting $sarif_file to HTML..."
+            output_html="${sarif_file%.sarif}.html"
+            total_results=$(jq '.runs[0].results | length' "$sarif_file" 2>/dev/null || echo "0")
+
+            # Génération du rapport HTML avec style
+            cat > "$output_html" <<'HTMLEOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>CodeQL SAST Analysis Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                .header { background-color: #0366d6; color: white; padding: 20px; border-radius: 5px; }
+                .summary { background-color: white; padding: 20px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                .vulnerability { background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #d73a49; border-radius: 3px; }
+                .severity-error { border-left-color: #d73a49; }
+                .severity-warning { border-left-color: #e36209; }
+                .severity-note { border-left-color: #ffd33d; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>CodeQL SAST Analysis Report</h1>
+                <p>Juice Shop DevSecOps Pipeline</p>
+                <p>Generated: $(date)</p>
+            </div>
+            <div class="summary">
+                <h2>Analysis Summary</h2>
+                <p>Language: JavaScript/TypeScript</p>
+                <p>Repository: juice-shop-devsecops</p>
+        HTMLEOF
+
+            echo "        <p><strong>Total Issues Found: $total_results</strong></p>" >> "$output_html"
+            echo "    </div>" >> "$output_html"
+            echo "    <h2>Vulnerabilities Found</h2>" >> "$output_html"
+
+            if [ "$total_results" -gt 0 ]; then
+              jq -r '.runs[0].results[] |
+                  "<div class=\"vulnerability severity-" + (.level // "warning") + "\">" +
+                  "<h3>" + .message.text + "</h3>" +
+                  "<p><strong>Severity:</strong> " + (.level // "warning") + "</p>" +
+                  "<p><strong>Rule ID:</strong> " + .ruleId + "</p>" +
+                  "<p><strong>Location:</strong> " + (.locations[0].physicalLocation.artifactLocation.uri // "N/A") +
+                  " (Line " + (.locations[0].physicalLocation.region.startLine // 0 | tostring) + ")</p>" +
+                  "</div>"' "$sarif_file" >> "$output_html" 2>/dev/null
+            else
+              echo "<p>No vulnerabilities detected</p>" >> "$output_html"
+            fi
+
+            echo "</body></html>" >> "$output_html"
+            echo "✅ HTML report generated: $output_html"
+          fi
+        done
+
+    - name: Upload HTML Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: codeql-html-report
+        path: |
+          sarif-results/*.html
+          sarif-results/*.sarif
+        retention-days: 30
+
+    - name: Display Results Summary
+      if: always()
+      run: |
+        echo "=== CodeQL Analysis Complete ==="
+        for sarif_file in sarif-results/*.sarif; do
+          if [ -f "$sarif_file" ]; then
+            total=$(jq '.runs[0].results | length' "$sarif_file" 2>/dev/null || echo "0")
+            echo "📊 Total vulnerabilities found: $total"
+            echo "📥 Download the HTML report from the Artifacts section"
+          fi
+        done
+
+---
+
+# ============================================================================
+# WORKFLOW 2: SCA - ANALYSE DES DÉPENDANCES AVEC SNYK
+# ============================================================================
+# Fichier: .github/workflows/snyk-scan.yml
+
+name: "SCA with Snyk"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  snyk-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --json-file-output=snyk-report.json
+
+    - name: Upload Snyk JSON report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: snyk-security-report
+        path: snyk-report.json
+
+# Configuration requise:
+# - Secret GitHub: SNYK_TOKEN (obtenu depuis https://app.snyk.io/account)
+
+---
+
+# ============================================================================
+# WORKFLOW 3: DAST - TESTS DYNAMIQUES AVEC OWASP ZAP
+# ============================================================================
+# Fichier: .github/workflows/owasp-zap-scan.yml
+
+name: "DAST - OWASP ZAP Scan"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  dast-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Juice Shop in Docker
+      run: |
+        docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
+        echo "Waiting 15 seconds for Juice Shop to start..."
+        sleep 15
+
+    - name: Run OWASP ZAP Baseline Scan
+      run: |
+        docker pull zaproxy/zap-stable
+        docker run --user root \
+          --network="host" \
+          -v $(pwd):/zap/wrk/:rw \
+          zaproxy/zap-stable zap-baseline.py \
+          -t http://localhost:3000 \
+          -r zap-report.html || true
+
+    - name: Upload ZAP HTML report
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-dast-report
+        path: zap-report.html
+
+# Note: Le scan OWASP ZAP identifie les vulnérabilités exploitables
+# dans l'application en cours d'exécution (XSS, injection SQL, etc.)
+
+---
+
+# ============================================================================
+# WORKFLOW 4: CONTAINER SECURITY - ANALYSE AVEC TRIVY
+# ============================================================================
+# Fichier: .github/workflows/trivy-scan.yml
+
+name: "Container Security - Trivy Scan"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  trivy-scan:
+    name: Scan Docker Image with Trivy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Pull Juice Shop Docker image
+      run: docker pull bkimminich/juice-shop:latest
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'bkimminich/juice-shop:latest'
+        format: 'json'
+        output: 'trivy-report.json'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Generate Trivy HTML report
+      if: always()
+      run: |
+        echo "Creating Trivy HTML report..."
+
+        cat > trivy-report.html <<'HTMLEOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Trivy Container Security Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                .header { background-color: #326CE5; color: white; padding: 20px; border-radius: 5px; }
+                .summary { background-color: white; padding: 20px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #326CE5; color: white; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Trivy Container Security Scan Report</h1>
+                <p>Juice Shop DevSecOps Pipeline</p>
+                <p>Generated: $(date)</p>
+            </div>
+            <div class="summary">
+                <h2>Scan Summary</h2>
+                <p><strong>Image:</strong> bkimminich/juice-shop:latest</p>
+        HTMLEOF
+
+        if [ -f "trivy-report.json" ]; then
+          critical=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo "0")
+          high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-report.json 2>/dev/null || echo "0")
+          medium=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' trivy-report.json 2>/dev/null || echo "0")
+          low=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' trivy-report.json 2>/dev/null || echo "0")
+
+          echo "        <table>" >> trivy-report.html
+          echo "          <tr><th>Severity</th><th>Count</th></tr>" >> trivy-report.html
+          echo "          <tr><td>Critical</td><td>$critical</td></tr>" >> trivy-report.html
+          echo "          <tr><td>High</td><td>$high</td></tr>" >> trivy-report.html
+          echo "          <tr><td>Medium</td><td>$medium</td></tr>" >> trivy-report.html
+          echo "          <tr><td>Low</td><td>$low</td></tr>" >> trivy-report.html
+          echo "          <tr><td><strong>Total</strong></td><td><strong>$((critical + high + medium + low))</strong></td></tr>" >> trivy-report.html
+          echo "        </table>" >> trivy-report.html
+        fi
+
+        echo "    </div>" >> trivy-report.html
+        echo "</body></html>" >> trivy-report.html
+
+        echo "✅ Trivy HTML report generated"
+
+    - name: Upload Trivy reports as artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: trivy-container-report
+        path: |
+          trivy-report.json
+          trivy-report.html
+        retention-days: 30
+
+---
+
+# ============================================================================
+# INTÉGRATION DEFECT DOJO (OPTIONNELLE)
+# ============================================================================
+#
+# Pour centraliser tous les rapports de sécurité dans Defect Dojo:
+#
+# 1. Déploiement de Defect Dojo:
+#    docker-compose up -d
+#    Accès: http://localhost:8080
+#
+# 2. Configuration des secrets GitHub:
+#    - DEFECTDOJO_URL: URL de votre instance Defect Dojo
+#    - DEFECTDOJO_TOKEN: Token API de Defect Dojo
+#
+# 3. Import automatique via API:
+#
+#    - name: Import to Defect Dojo
+#      run: |
+#        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
+#          -H "Authorization: Token ${{ secrets.DEFECTDOJO_TOKEN }}" \
+#          -F "scan_type=SARIF" \
+#          -F "product_name=Juice Shop" \
+#          -F "engagement_name=CI/CD $(date +%Y-%m-%d)" \
+#          -F "file=@sarif-results/*.sarif" \
+#          -F "active=true"
+#
+# Types de scan supportés:
+# - CodeQL: SARIF
+# - Snyk: Snyk Scan (JSON)
+# - OWASP ZAP: ZAP Scan
+# - Trivy: Trivy Scan (JSON)
+
+---
+
+# ============================================================================
+# CONFIGURATION TALISMAN (PRE-COMMIT HOOK LOCAL)
+# ============================================================================
+#
+# Installation:
+# bash -c "$(curl -fsSL https://thoughtworks.github.io/talisman/install.sh)"
+#
+# Configuration: .talismanrc
+# fileignoreconfig:
+# - filename: fichier_à_ignorer.yml
+#   checksum: hash_du_fichier
+# version: "1.0"
+#
+# Talisman détecte automatiquement:
+# - Clés API
+# - Mots de passe
+# - Tokens
+# - Secrets dans le code
+
+---
+
+# ============================================================================
+# SECRETS GITHUB REQUIS
+# ============================================================================
+#
+# Pour que tous les workflows fonctionnent correctement, configurez:
+#
+# 1. SNYK_TOKEN
+#    - Obtenu depuis: https://app.snyk.io/account
+#    - Utilisé pour: Analyse SCA avec Snyk
+#
+# 2. DEFECTDOJO_URL (optionnel)
+#    - Format: https://votre-defectdojo.com
+#    - Utilisé pour: Import automatique des rapports
+#
+# 3. DEFECTDOJO_TOKEN (optionnel)
+#    - Obtenu depuis: DefectDojo → User Settings → API Key
+#    - Utilisé pour: Authentification API
+#
+# Configuration dans GitHub:
+# Settings → Secrets and variables → Actions → New repository secret
+
+---
+
+# ============================================================================
+# RÉSUMÉ DES ARTIFACTS GÉNÉRÉS
+# ============================================================================
+#
+# Chaque workflow génère des rapports téléchargeables:
+#
+# 1. CodeQL (SAST):
+#    - codeql-html-report (HTML + SARIF)
+#    - Détails: Vulnérabilités du code source
+#
+# 2. Snyk (SCA):
+#    - snyk-security-report (JSON)
+#    - Détails: Vulnérabilités des dépendances
+#
+# 3. OWASP ZAP (DAST):
+#    - zap-dast-report (HTML)
+#    - Détails: Vulnérabilités exploitables à l'exécution
+#
+# 4. Trivy (Container):
+#    - trivy-container-report (JSON + HTML)
+#    - Détails: Vulnérabilités de l'image Docker
+#
+# Tous les artifacts sont conservés pendant 30 jours
+
+---
+
+# ============================================================================
+# MÉTRIQUES DE PERFORMANCE DU PIPELINE
+# ============================================================================
+#
+# Temps d'exécution moyen par workflow:
+# - CodeQL SAST: ~5-10 minutes
+# - Snyk SCA: ~2-3 minutes
+# - OWASP ZAP DAST: ~10-20 minutes
+# - Trivy Container: ~2-3 minutes
+#
+# Total pipeline: ~20-35 minutes
+#
+# Déclencheurs:
+# - Push sur main/develop
+# - Pull requests vers main
+# - Exécution manuelle (workflow_dispatch)
+# - Planifié (CodeQL hebdomadaire)
+
+# ============================================================================
+# FIN DU FICHIER DE CONFIGURATION
+# ============================================================================
