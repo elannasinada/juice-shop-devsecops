@@ -1,90 +1,43 @@
-name: "Snyk SCA Scan"
+name: "SCA with Snyk"
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: ["main"]
   pull_request:
-    branches: [ main ]
+    branches: ["main"]
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *'
 
 jobs:
   snyk-scan:
-    name: Snyk Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
+    - name: Use Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '20'      # Juice Shop OK avec 18/20. Garde 18 pour npm install stable.
 
     - name: Install dependencies
-      run: npm install --legacy-peer-deps
+      run: npm install
 
-    - name: Run Snyk to check for vulnerabilities
-      uses: snyk/actions/node@master
-      continue-on-error: true
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --all-projects --severity-threshold=low --json-file-output=snyk-results.json
+    - name: Install Snyk CLI
+      run: npm install -g snyk
 
-    - name: Upload Snyk results (JSON)
+    - name: Authenticate Snyk
+      run: snyk auth ${{ secrets.SNYK_TOKEN }}
+
+    # SCA (analyse des dépendances) et export JSON
+    - name: Run Snyk test and save JSON report
+      id: snyk_scan
+      continue-on-error: true   # ✅ Allows pipeline to continue even if vulnerabilities are found
+      run: snyk test --json-file-output=snyk-report.json
+      
+    # Sauvegarder le rapport JSON en artifact
+    - name: Upload Snyk JSON report
       uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: snyk-results-json
-        path: snyk-results.json
-        retention-days: 30
-
-    - name: Install snyk-to-html
-      if: always()
-      run: |
-        npm install -g snyk-to-html
-
-    - name: Generate Snyk HTML Report
-      if: always()
-      run: |
-        if [ -f "snyk-results.json" ]; then
-          snyk-to-html -i snyk-results.json -o snyk-report.html || echo "HTML generation skipped"
-          
-          # Create summary
-          echo "# Snyk Scan Summary" > snyk-summary.md
-          echo "" >> snyk-summary.md
-          echo "**Scan Date:** $(date)" >> snyk-summary.md
-          echo "" >> snyk-summary.md
-          
-          # Extract vulnerability counts
-          if command -v jq &> /dev/null; then
-            total_vulns=$(jq '[.vulnerabilities[]] | length' snyk-results.json 2>/dev/null || echo "0")
-            echo "**Total Vulnerabilities Found:** $total_vulns" >> snyk-summary.md
-          fi
-        else
-          echo "No Snyk results file found"
-        fi
-
-    - name: Upload HTML Report
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: snyk-html-report
-        path: |
-          snyk-report.html
-          snyk-summary.md
-        retention-days: 30
-
-    - name: Display Summary
-      if: always()
-      run: |
-        echo "=== Snyk SCA Scan Complete ==="
-        if [ -f "snyk-results.json" ]; then
-          echo "✅ Scan completed successfully"
-          echo "📥 Download artifacts to view detailed results"
-        else
-          echo "⚠️ No results generated"
-        fi
+        name: snyk-security-report
+        path: snyk-report.json
