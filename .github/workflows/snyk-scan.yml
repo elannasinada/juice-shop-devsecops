@@ -23,21 +23,17 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Install Snyk CLI
-      run: npm install -g snyk
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --json-file-output=snyk-report.json
 
-    - name: Authenticate Snyk
-      run: snyk auth ${{ secrets.SYNK_TOKEN }}
-
-    # SCA (analyse des dépendances) et export JSON
-    - name: Run Snyk test and save JSON report
-      id: snyk_scan
-      continue-on-error: true   # ✅ Allows pipeline to continue even if vulnerabilities are found
-      run: snyk test --json-file-output=snyk-report.json
-      
-    # Sauvegarder le rapport JSON en artifact
     - name: Upload Snyk JSON report
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: snyk-security-report
         path: snyk-report.json
